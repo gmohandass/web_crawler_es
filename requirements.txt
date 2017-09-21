@@ -1,2 +1,7 @@
 elasticsearch>=5.4.0
 requests
+beautifulsoup4
+lxml
+celery==4.0.2
+Flask
+CMRESHandler
