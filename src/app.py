@@ -1,21 +1,11 @@
-from inspect import getmembers, isclass
+from src.crawlers import *
 
+import inspect
+import sys
 
-#from crawlers import freelancer
+if __name__ == '__main__':
 
-
-# def get_subclasses(classes):
-#     print([cls.__name__ for cls in classes.__subclasses__()])
-
-def test():
-    import src.crawlers
-    print src.crawlers
-    # module = getattr(src.crawlers, "freelancer")
-    print module
-
-test()
-
-
-# crawlers.crawler_interface = getmembers(module, isclass)
-# command = [command for command in crawlers.crawler_interface if command[0] != 'CrawlerInterface']
-# print command
+    current_module = sys.modules[__name__]
+    scrappers = [x[1] for x in inspect.getmembers(current_module, inspect.isclass) if (issubclass(x[1], CrawlerInterface) and (x[1] != CrawlerInterface))]
+    for scrapper in scrappers:
+        scrapper(es_host='http://34.230.32.193:9200').execute(["Artificial Intelligence"])

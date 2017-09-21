@@ -1,5 +1,3 @@
-
-
 import requests
 from bs4 import BeautifulSoup
 from bs4.dammit import EncodingDetector
@@ -8,13 +6,14 @@ from crawler_interface import CrawlerInterface
 
 
 class Freelancer(CrawlerInterface):
-    def __init__(self, es_host, base_url, test=True):
+    def __init__(self, es_host, test=True):
         super(Freelancer, self).__init__(es_host, test)
-        self.base_url = base_url
+        self.NAME = "freelancer"
+        self.BASE_URL = "https://www.freelancer.com"
 
     def construct_search_query(self, keyword_lst):
         payloads = [{'keyword': keyword} for keyword in keyword_lst]
-        base_url = self.base_url + "/jobs/regions"
+        base_url = self.BASE_URL + "/jobs/regions"
         return (requests.get(base_url, params=payload) for payload in payloads)
 
     def grab_projects(self, resp):
@@ -22,9 +21,9 @@ class Freelancer(CrawlerInterface):
         html_encoding = EncodingDetector.find_declared_encoding(resp.content, is_html=True)
         encoding = html_encoding or http_encoding
         soup = BeautifulSoup(resp.content, from_encoding=encoding)
-        links = [self.base_url + link['href'] for link in soup.find_all('a', href=True) if
+        links = [self.BASE_URL + link['href'] for link in soup.find_all('a', href=True) if
                  link['href'].startswith("/projects/")]
-        # TODO: Send everything to es (possibly bulk)
+        self.add_to_queue(urls=links, website_name=self.NAME)
         return len(links)
 
     def spyder(self, search_result_html, pagination=None):
@@ -39,16 +38,9 @@ class Freelancer(CrawlerInterface):
             next_page_link_root, keyword = next_page_link.split("?")
             next_page_link = "?".join(["".join(map(lambda s: str(int(s) + 1) if s.isdigit() else s,
                                                    list(next_page_link_root))), keyword])
-            self.spyder(requests.get(self.base_url + next_page_link), next_page_link)
-
-    def printt(self):
-        print "test"
+            self.spyder(requests.get(self.BASE_URL + next_page_link), next_page_link)
 
     def execute(self, keyword_list):
         main_results = self.construct_search_query(keyword_list)
         for res in main_results:
             self.spyder(res)
-
-
-freelancer = Freelancer(es_host='http://34.230.32.193:9200', base_url="https://www.freelancer.com")
-freelancer.execute(["Artificial Intelligence"])

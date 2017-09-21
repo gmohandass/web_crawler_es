@@ -1,0 +1,31 @@
+version: '2'
+services:
+    rabbit:
+        image: rabbitmq:latest
+        environment:
+            - RABBITMQ_DEFAULT_USER=admin
+            - RABBITMQ_DEFAULT_PASS=mypass
+        ports:
+            - "5672:5672"
+
+    worker:
+        command: celery -A src worker --loglevel=info
+        network_mode: "host"
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - .:/app
+        depends_on:
+            - rabbit
+
+    app:
+        command: python -m src.app
+        network_mode: "host"
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - .:/app
+        depends_on:
+            - worker

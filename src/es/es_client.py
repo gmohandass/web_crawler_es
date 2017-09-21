@@ -73,16 +73,3 @@ class ESClient(object):
             return response
         except Exception as e:
             raise e
-
-
-"""
-Below is an example of how to index a specific web page into elasticsearch.
-Elasticsearch url is http://34.230.32.193:9200.
-"""
-if __name__ == '__main__':
-    es_url = 'http://34.230.32.193:9200'
-    author = "gmohandass"
-    my_es = ESClient(es_url)
-    k = my_es.bulk_publish_docs(["https://www.freelancer.com/projects/graphic-design/build-website-15161743/",
-                             "https://www.freelancer.com/projects/graphic-design/build-websi22/"], "freelancer")
-    print k
