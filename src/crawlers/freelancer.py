@@ -1,13 +1,12 @@
-import requests
-from bs4 import BeautifulSoup
+from crawler_interface import HTMLCrawlerInterface
 from bs4.dammit import EncodingDetector
+from bs4 import BeautifulSoup
+import requests
 
-from crawler_interface import CrawlerInterface
 
-
-class Freelancer(CrawlerInterface):
-    def __init__(self, es_host, test=True):
-        super(Freelancer, self).__init__(es_host, test)
+class Freelancer(HTMLCrawlerInterface):
+    def __init__(self, test=True):
+        super(Freelancer, self).__init__(test)
         self.NAME = "freelancer"
         self.BASE_URL = "https://www.freelancer.com"
 
