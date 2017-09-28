@@ -5,3 +5,4 @@ lxml
 celery==4.0.2
 Flask
 CMRESHandler
+flasgger
