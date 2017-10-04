@@ -1,10 +1,10 @@
-from crawler_interface import HTMLCrawlerInterface
+from .crawler_interface import CrawlerInterface
 from bs4.dammit import EncodingDetector
 from bs4 import BeautifulSoup
 import requests
 
 
-class Freelancer(HTMLCrawlerInterface):
+class Freelancer(CrawlerInterface):
     def __init__(self, test=True):
         super(Freelancer, self).__init__(test)
         self.NAME = "freelancer"

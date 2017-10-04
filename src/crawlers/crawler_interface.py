@@ -1,37 +1,14 @@
-from src.tasks import publish_to_es_bulk
-from commons.config import ES_URL
+from commons.config  import ES_URL 
+from scrapy.settings import Settings
+from scrapy.crawler  import CrawlerProcess
+from .elastic_spider import ElasticSpider
+from .authentication_spider import AuthenticationSpider
+from tasks import call_function
 import scrapy
 
+
 class CrawlerInterface(object):
-    ''' Common parent to ensure objects are an interface '''
-
-    def __init__(self, test=True):
-        self.test = test
-
-    def execute(self, keyword_list):
-        ''' Crawl the site specifically for certain keywords '''
-        raise NotImplementedError('You must implement the execute() method yourself!')
-
-    def crawl(self):
-        ''' Crawl all the site's job postings '''
-        raise NotImplementedError('You must implement the crawl() method yourself!')
-
-    def parse(self, response):
-        ''' Parse a response page, which comes from urls in self.start_urls '''
-        raise NotImplementedError('You must implement the parse() method yourself!')
-
-
-
-class HTMLCrawlerInterface(CrawlerInterface):
-    ''' Crawl site and just store raw html pages '''
-    
-    def add_to_queue(self, urls, website_name):
-        publish_to_es_bulk.delay(es_host=ES_URL, url=urls, website_name=website_name,
-                                 test=self.test)
-
-
-class ParsingCrawlerInterface(CrawlerInterface):
-    ''' Crawl site and parse html into structured dictionary '''
+    ''' Wraps both the crawler and the scrapy handler '''
     
     # Variables which can be overwritten in the inheriting class
     authenticate = False # Use authentication class
@@ -53,40 +30,51 @@ class ParsingCrawlerInterface(CrawlerInterface):
         'AUTOTHROTTLE_TARGET_CONCURRENCY' : 1.0,  # Average number of requests to be sent in parallel
     }
 
-    def __init__(self, test=True, settings={}):
-        super(ParsingCrawlerInterface, self).__init__(test)
-        
-        settings = scrapy.settings.Settings() 
+    def __init__(self, settings={}):        
+        settings = Settings() 
         for key, value in self._default_settings.items():
             settings.set(key, value)
         for key, value in settings.items():
             settings.set(key, value)
 
-        spider = self._construct_spider( self.parse.__func__ )
-        self.crawler = scrapy.crawler.CrawlerRunner(settings)  
-        
+        self.spider = self._construct_spider()
+        self.crawler= CrawlerProcess(settings)
+        self.crawler.crawl(self.spider)
+        self.crawl  = lambda: call_function(self.crawler.start)
 
-    def _construct_spider(self, base_parse):
+
+    def _construct_spider(self):
         ''' Constructor to enable dynamic inheritance '''
-        if not (self.authentication or self.elastic_db):
+        if not (self.authenticate or self.elastic_db):
             parent_classes = [scrapy.Spider]
         else:
             parent_classes = []
             if self.elastic_db:
                 parent_classes.append(ElasticSpider)
-            if self.authentication:
+            if self.authenticate:
                 parent_classes.append(AuthenticationSpider)
 
         class ScrapySpider(*parent_classes): 
-            def __init__(self, *args, **kwargs):
+            def __init__(cls, *args, **kwargs):
                 ''' 
-                Defining parse in this way is _so_ hacky, but at the moment
-                it seems like the best way to merge with the existing code 
-                base, while also allowing the classes which inherit from
-                ParsingCrawlerInterface to just define parse() without worrying
-                about the details of dynamic class inheritance.
+                Dynamic inheritance and function definitions at run time
                 '''
-                super(ScrapySpider, self).__init__(*args, **kwargs)
-                parse = lambda *args, **kwargs: base_parse(self, *args, **kwargs)
+                for k,v in self.__class__.__dict__.items():
+                    if callable(v):
+                        f = getattr(self, k).__func__
+                        cls.__dict__[k] = (lambda *args, __f=f, **kwargs:
+                            __f(cls, *args, **kwargs)) # Bind function to lambda
+                    elif '__' not in k:
+                        cls.__dict__[k] = v
 
-        return ScrapySpider
+                super(ScrapySpider, cls).__init__(*args, **kwargs)
+                
+            def from_crawler(self, *args, **kwargs): return self
+        return ScrapySpider()
+
+
+    def execute(self, keyword_list):
+        ''' Crawl the site specifically for certain keywords '''
+        self.spider.start_urls = [self.search_url % kw for kw in keyword_list]
+        self.crawl()
+
