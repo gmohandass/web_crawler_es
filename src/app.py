@@ -1,41 +1,41 @@
-import json
-
-from flask import Flask, Response, request
-
-from commons.config import *
-
-from src.crawlers import *
-
-import inspect
-import sys
-import requests
-
+# Set up site 
+from flask import Flask, Response, request, render_template
 flask_app = Flask(__name__)
+flask_app.jinja_env.add_extension('pyjade.ext.jinja.PyJadeExtension')
 
+# Find and filter all classes contained in /crawlers
+from commons.config import ES_URL
+from crawlers.crawler_interface import CrawlerInterface
+import inspect
+import requests
+import json
+import importlib 
+import glob
+import os 
 
-SCRAPPERS = [x[0] for x in inspect.getmembers(sys.modules[__name__], inspect.isclass) if
-             (issubclass(x[1], CrawlerInterface) and (x[1] != CrawlerInterface))]
+classes = []
+files   = glob.glob(os.path.join('crawlers', '*.py'))
+for f in files:
+    f = f.replace(os.path.sep, '.').replace('.py','')
+    module   = importlib.import_module(f)
+    classes += inspect.getmembers(module, inspect.isclass)
+
+SCRAPER_NAMES, SCRAPER_CLASS = zip(*[
+    (name, clss)
+    for name, clss in classes
+    if name != 'CrawlerInterface' and issubclass(clss, CrawlerInterface)
+])
 
 
 @flask_app.route('/', methods=['GET'])
 def index():
-
-    return '''
-        <html>
-          <head>
-            <title>Home Page</title>
-          </head>
-          <body>
-            <h1>Healthy</h1>
-          </body>
-        </html>
-        '''
+    return render_template('index.html')
 
 
-# List Scrappers
-@flask_app.route('/scrappers', methods=['GET'])
-def scrappers():
-    return Response(json.dumps({'scrappers': SCRAPPERS}), status=200, mimetype='application/json')
+# List Scrapers
+@flask_app.route('/scrapers', methods=['GET'])
+def scrapers():
+    return render_template('scrapers.jade', **{'scrapers': SCRAPER_NAMES})
 
 
 # List ES indices
@@ -45,27 +45,55 @@ def list_tables():
 
 
 # Delete ES indices
-@flask_app.route('/tables/<table_name>', methods=['GET', 'DELETE'])
-def delete_tables(table_name):
+@flask_app.route('/delete/<table_name>', methods=['GET', 'DELETE'])
+def delete(table_name):
     return requests.delete(ES_URL + "/" + table_name).content
 
 
-# Start a Crawler
-@flask_app.route('/crawler', methods=['POST'])
-def crawler():
-    scrapper = request.args.get('scrapper', None)
+# View data for an index
+@flask_app.route('/all_data/<table_name>', methods=['GET'])
+def all_data(table_name):
+    return requests.get(ES_URL + "/%s/_search?pretty=true" % table_name).content
+
+
+# Start a Crawler using keywords
+@flask_app.route('/keyword', methods=['POST'])
+def keyword():
+    scraper  = request.args.get('scraper', None)
     keywords = request.args.getlist('keywords', type=list)
-    if (scrapper is None) or (keywords is None):
-        return Response(json.dumps({'response': "Scrapper and Keywords need to be provided"}),
+    if (scraper is None) or (keywords is None):
+        return Response(json.dumps({'response': "Scraper and Keywords need to be provided"}),
                         status=400, mimetype='application/json')
-    scrapper_lower = scrapper.lower()
-    scrapper_filtered = [clss[1] for clss in inspect.getmembers(sys.modules[__name__], inspect.isclass) \
-                 if (clss[0].lower() == scrapper_lower)]
-    if len(scrapper_filtered) < 1:
-        return Response(json.dumps({'response': "scrapper not found"}), status=400, mimetype='application/json')
-    scrapper = scrapper_filtered[0]
-    scrapper(es_host=ES_URL).execute(keywords)
+    
+    scraper_lower  = scraper.lower()
+    all_names_lower= [name.lower() for name in SCRAPER_NAMES]
+    if scraper_lower not in all_names_lower:
+        return Response(json.dumps({'response': "scraper not found"}), status=400, mimetype='application/json')
+    
+    scraper = SCRAPER_CLASS[ all_names_lower.index(scraper_lower) ]
+    scraper().execute(keywords)
     return Response(json.dumps({'response': "Success"}), status=200, mimetype='application/json')
+
+
+# Start a Crawler using keywords
+@flask_app.route('/crawl/<scraper>/<keyword>', methods=['GET'])
+def crawl(scraper, keyword):
+    scraper_lower  = scraper.lower()
+    all_names_lower= [name.lower() for name in SCRAPER_NAMES]
+    if scraper_lower not in all_names_lower:
+        return Response(json.dumps({'response': "scraper not found"}), status=400, mimetype='application/json')
+    
+    scraper = SCRAPER_CLASS[ all_names_lower.index(scraper_lower) ]
+    scraper().execute([keyword])
+    return Response(json.dumps({'response': "Success"}), status=200, mimetype='application/json')
+
+
+# Create an index
+@flask_app.route('/create/<table_name>', methods=['GET'])
+def create(table_name):
+    test(table_name)
+    return requests.get(ES_URL + "/_cat/indices").content
+
 
 
 if __name__ == "__main__":
